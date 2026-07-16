@@ -95,13 +95,17 @@ optimizer3 = torch.optim.SGD(model3.parameters(), lr=0.01, momentum=0.5)
 
 criterion = torch.nn.CrossEntropyLoss()
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def train(epoch, model, optimizer):
+    model = model.to(device)
     total_loss = 0.0
     running_loss = 0.0
     model.train()
     batch_count = 0
     for batch_idx, (data, target) in enumerate(train_loader):
+        data = data.to(device)
+        target = target.to(device)
         optimizer.zero_grad()
         y_pred = model(data)
         loss = criterion(y_pred, target)
@@ -122,6 +126,8 @@ def test(epoch, model):
     total_count = 0
     with torch.no_grad():
         for data, target in test_loader:
+            data = data.to(device)
+            target = target.to(device)
             y_pred = model(data)
             _, predicted = torch.max(y_pred.data, dim=1)
             total_count += target.size(0)
