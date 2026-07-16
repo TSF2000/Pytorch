@@ -8,7 +8,7 @@ transform = transforms.Compose([
     transforms.Normalize((0.1307,), (0.3081,))
 ])
 
-path = './data/mnist'
+path = './dataset/mnist'
 
 train_set = datasets.MNIST(root=path, train=True, transform=transform)
 train_loader = DataLoader(train_set, batch_size=64, shuffle=True, num_workers=0)
