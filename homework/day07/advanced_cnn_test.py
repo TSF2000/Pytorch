@@ -11,7 +11,8 @@ from matplotlib import pyplot as plt
 MNIST_ROOT = Path(__file__).resolve().parents[2] / "dataset" / "mnist"
 # 权重保存在脚本同级 checkpoints/
 CKPT_DIR = Path(__file__).resolve().parent / "checkpoints"
-CKPT_PATH = CKPT_DIR / "inception_mnist.pth"
+CKPT_PATH = CKPT_DIR / "inception_mnist.pth"          # state_dict（推荐）
+CKPT_FULL_PATH = CKPT_DIR / "inception_mnist_full.pth"  # 整个模型
 
 train_transforms = transforms.Compose([
     transforms.ToTensor(),
@@ -116,7 +117,7 @@ def test(epoch, model):
 
 
 def save_checkpoint(model, path, epoch=None, acc=None, optimizer=None):
-    """保存权重；可选附带 epoch / acc / optimizer，便于续训或记录。"""
+    """保存权重 state_dict；可选附带 epoch / acc / optimizer。"""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"model": model.state_dict()}
@@ -131,9 +132,9 @@ def save_checkpoint(model, path, epoch=None, acc=None, optimizer=None):
 
 
 def load_checkpoint(path, model, optimizer=None, map_location=None):
-    """加载权重到已构建好的 model（结构须与训练时一致）。"""
+    """加载 state_dict 到已构建好的 model（结构须与训练时一致）。"""
     map_location = map_location or device
-    payload = torch.load(path, map_location=map_location)
+    payload = torch.load(path, map_location=map_location, weights_only=False)
     # 兼容：既支持本课的 dict，也支持纯 state_dict
     state = payload["model"] if isinstance(payload, dict) and "model" in payload else payload
     model.load_state_dict(state)
@@ -141,6 +142,29 @@ def load_checkpoint(path, model, optimizer=None, map_location=None):
         optimizer.load_state_dict(payload["optimizer"])
     print("loaded checkpoint <-", path)
     return payload
+
+
+def save_full_model(model, path):
+    """直接保存整个模型对象（含结构 + 权重）。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # 存 CPU 版更通用，避免换机器无 GPU 时加载失败
+    torch.save(model.cpu(), path)
+    model.to(device)  # 存完把模型放回原设备，方便继续训练
+    print("saved full model ->", path)
+
+
+def load_full_model(path, map_location=None):
+    """
+    加载整个模型。不必再 Net()，但运行环境里仍要能找到 InceptionA / Net 的类定义
+    （通常就是在同一个 .py 里，或能 import 到定义这些类的模块）。
+    """
+    map_location = map_location or device
+    model = torch.load(path, map_location=map_location, weights_only=False)
+    model = model.to(device)
+    model.eval()
+    print("loaded full model <-", path)
+    return model
 
 
 def predict(model, x):
@@ -167,23 +191,28 @@ if __name__ == '__main__':
         acc = test(epoch, model)
         acc_list.append(acc)
         epoch_list.append(epoch)
-        # 测试集准确率创新高时存盘
+        # 测试集准确率创新高时：存 state_dict + 整个模型
         if acc > best_acc:
             best_acc = acc
             save_checkpoint(model, CKPT_PATH, epoch=epoch + 1, acc=best_acc, optimizer=optimizer)
+            save_full_model(model, CKPT_FULL_PATH)
 
     print("best acc during training: {:.2f}%".format(100 * best_acc))
 
-    # ----- 后续引用示例：重新建网 → 加载最优权重 → 再测 / 预测 -----
-    model_loaded = Net().to(device)
-    ckpt = load_checkpoint(CKPT_PATH, model_loaded)
-    print("checkpoint meta: epoch={}, acc={:.2f}%".format(
+    # ----- 方式 A：state_dict（需先 Net() 再建结构）-----
+    model_from_state = Net().to(device)
+    ckpt = load_checkpoint(CKPT_PATH, model_from_state)
+    print("state_dict meta: epoch={}, acc={:.2f}%".format(
         ckpt.get("epoch"), 100 * ckpt.get("acc", 0.0)))
-    test(ckpt.get("epoch", 1) - 1, model_loaded)
+    test(ckpt.get("epoch", 1) - 1, model_from_state)
 
-    # 随便抽一张测试图做预测
+    # ----- 方式 B：整个模型（直接 load，不必先 Net()）-----
+    model_full = load_full_model(CKPT_FULL_PATH)
+    test(0, model_full)
+
+    # 随便抽一张测试图做预测（用整模加载的结果）
     sample, label = test_set[0]
-    pred = predict(model_loaded, sample.unsqueeze(0))
+    pred = predict(model_full, sample.unsqueeze(0))
     print("sample predict: {}, label: {}".format(pred.item(), label))
 
     plt.plot(epoch_list, acc_list, label='Accuracy')
