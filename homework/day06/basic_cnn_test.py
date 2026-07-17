@@ -1,15 +1,20 @@
+from pathlib import Path
+
 import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
-train_set = datasets.MNIST('./dataset/mnist', train=True, download=True, transform=transforms.Compose([
+# homework/day06 → 项目根 / dataset/mnist
+MNIST_ROOT = Path(__file__).resolve().parents[2] / "dataset" / "mnist"
+
+train_set = datasets.MNIST(str(MNIST_ROOT), train=True, download=True, transform=transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.1307,), (0.3081,))
 ]))
 
 train_loader = DataLoader(train_set, batch_size=64, shuffle=True, num_workers=0)
 
-test_set = datasets.MNIST('./dataset/mnist', train=False, download=True, transform=transforms.Compose([
+test_set = datasets.MNIST(str(MNIST_ROOT), train=False, download=True, transform=transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.1307,), (0.3081,))
 ]))
