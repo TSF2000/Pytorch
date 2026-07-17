@@ -9,6 +9,9 @@ from matplotlib import pyplot as plt
 
 # homework/day07 → 项目根 / dataset/mnist
 MNIST_ROOT = Path(__file__).resolve().parents[2] / "dataset" / "mnist"
+# 权重保存在脚本同级 checkpoints/
+CKPT_DIR = Path(__file__).resolve().parent / "checkpoints"
+CKPT_PATH = CKPT_DIR / "inception_mnist.pth"
 
 train_transforms = transforms.Compose([
     transforms.ToTensor(),
@@ -40,7 +43,6 @@ class InceptionA(nn.Module):
         self.branch4_conv1 = conv_1_1_16
         self.branch4_conv2 = nn.Conv2d(16, 24, kernel_size=3, padding=1)
         self.branch4_conv3 = nn.Conv2d(24, 24, kernel_size=3, padding=1)
-        pass
 
     def forward(self, x):
         avg_pool = F.avg_pool2d(x, 3, 1, 1)
@@ -77,16 +79,11 @@ class Net(nn.Module):
         return self.fc(x)
 
 
-model = Net()
-
-optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 criterion = nn.CrossEntropyLoss()
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = model.to(device)
 
-
-def train(epoch):
+def train(epoch, model, optimizer):
     total_loss, running_loss, batch_cnt = 0.0, 0.0, 0
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -100,12 +97,12 @@ def train(epoch):
         total_loss += loss.item()
         batch_cnt += 1
         if batch_cnt % 300 == 299:
-            print('epoch:{}, batch_idx:{}, avg_loss:{:.4f}'.format(epoch + 1, batch_idx, running_loss / 300))
+            print('epoch:{}, batch_idx:{}, avg_loss:{:.4f}'.format(epoch + 1, batch_cnt + 1, running_loss / 300))
             running_loss = 0.0
     return total_loss / batch_cnt
 
 
-def test(epoch):
+def test(epoch, model):
     model.eval()
     total, correct = 0, 0
     with torch.no_grad():
@@ -114,18 +111,81 @@ def test(epoch):
             _, predicted = torch.max(model(data), 1)
             total += target.size(0)
             correct += (predicted == target).sum().item()
-        print(('epoch:{}, acc: {:.2f}%'.format(epoch + 1, 100 * correct / total)))
+        print('epoch:{}, acc: {:.2f}%'.format(epoch + 1, 100 * correct / total))
         return correct / total
 
 
+def save_checkpoint(model, path, epoch=None, acc=None, optimizer=None):
+    """保存权重；可选附带 epoch / acc / optimizer，便于续训或记录。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"model": model.state_dict()}
+    if epoch is not None:
+        payload["epoch"] = epoch
+    if acc is not None:
+        payload["acc"] = acc
+    if optimizer is not None:
+        payload["optimizer"] = optimizer.state_dict()
+    torch.save(payload, path)
+    print("saved checkpoint ->", path)
+
+
+def load_checkpoint(path, model, optimizer=None, map_location=None):
+    """加载权重到已构建好的 model（结构须与训练时一致）。"""
+    map_location = map_location or device
+    payload = torch.load(path, map_location=map_location)
+    # 兼容：既支持本课的 dict，也支持纯 state_dict
+    state = payload["model"] if isinstance(payload, dict) and "model" in payload else payload
+    model.load_state_dict(state)
+    if optimizer is not None and isinstance(payload, dict) and "optimizer" in payload:
+        optimizer.load_state_dict(payload["optimizer"])
+    print("loaded checkpoint <-", path)
+    return payload
+
+
+def predict(model, x):
+    """单张/小批量推理，x shape: (N,1,28,28)"""
+    model.eval()
+    with torch.no_grad():
+        x = x.to(device)
+        logits = model(x)
+        pred = logits.argmax(dim=1)
+    return pred
+
+
 if __name__ == '__main__':
+    model = Net().to(device)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
+
     epoch_list = []
     acc_list = []
     loss_list = []
+    best_acc = 0.0
+
     for epoch in range(10):
-        loss_list.append(train(epoch))
-        acc_list.append(test(epoch))
+        loss_list.append(train(epoch, model, optimizer))
+        acc = test(epoch, model)
+        acc_list.append(acc)
         epoch_list.append(epoch)
+        # 测试集准确率创新高时存盘
+        if acc > best_acc:
+            best_acc = acc
+            save_checkpoint(model, CKPT_PATH, epoch=epoch + 1, acc=best_acc, optimizer=optimizer)
+
+    print("best acc during training: {:.2f}%".format(100 * best_acc))
+
+    # ----- 后续引用示例：重新建网 → 加载最优权重 → 再测 / 预测 -----
+    model_loaded = Net().to(device)
+    ckpt = load_checkpoint(CKPT_PATH, model_loaded)
+    print("checkpoint meta: epoch={}, acc={:.2f}%".format(
+        ckpt.get("epoch"), 100 * ckpt.get("acc", 0.0)))
+    test(ckpt.get("epoch", 1) - 1, model_loaded)
+
+    # 随便抽一张测试图做预测
+    sample, label = test_set[0]
+    pred = predict(model_loaded, sample.unsqueeze(0))
+    print("sample predict: {}, label: {}".format(pred.item(), label))
+
     plt.plot(epoch_list, acc_list, label='Accuracy')
     plt.plot(epoch_list, loss_list, label='Loss')
     plt.legend()
