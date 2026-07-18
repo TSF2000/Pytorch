@@ -32,16 +32,15 @@ class InceptionA(nn.Module):
         # branch1 avg_pool 1*1_24_conv
         self.branch1_conv = nn.Conv2d(in_channels, 24, kernel_size=1)
 
-        conv_1_1_16 = nn.Conv2d(in_channels, 16, kernel_size=1)
         # branch2 1*1_16_conv
-        self.branch2_conv = conv_1_1_16
+        self.branch2_conv = nn.Conv2d(in_channels, 16, kernel_size=1)
 
         # branch3 1*1_16_conv 5*5_24_conv
-        self.branch3_conv1 = conv_1_1_16
+        self.branch3_conv1 = nn.Conv2d(in_channels, 16, kernel_size=1)
         self.branch3_conv2 = nn.Conv2d(16, 24, kernel_size=5, padding=2)
 
         # branch4 1*1_16_conv 3*3_24_conv 3*3_24_conv
-        self.branch4_conv1 = conv_1_1_16
+        self.branch4_conv1 = nn.Conv2d(in_channels, 16, kernel_size=1)
         self.branch4_conv2 = nn.Conv2d(16, 24, kernel_size=3, padding=1)
         self.branch4_conv3 = nn.Conv2d(24, 24, kernel_size=3, padding=1)
 
